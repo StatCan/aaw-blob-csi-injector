@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path"
 	"strings"
 
 	"k8s.io/api/admission/v1beta1"
@@ -12,8 +13,71 @@ import (
 	"k8s.io/klog"
 )
 
+const defaultRegion = "us-east-1"
+
 func cleanName(name string) string {
 	return strings.ReplaceAll(name, "_", "-")
+}
+
+func (s *server) addMount(name, accessKey, secretKey, endpoint, region, bucket, mountPath string) []map[string]interface{} {
+	patches := make([]map[string]interface{}, 0)
+
+	// Add volume definition
+	patches = append(patches, map[string]interface{}{
+		"op":   "add",
+		"path": "/spec/volumes/-",
+		"value": v1.Volume{
+			Name: name,
+			VolumeSource: v1.VolumeSource{
+				FlexVolume: &v1.FlexVolumeSource{
+					Driver: "informaticslab/goofys-flex-volume",
+					Options: map[string]string{
+						"bucket":     bucket,
+						"endpoint":   endpoint,
+						"region":     region,
+						"access-key": accessKey,
+						"secret-key": secretKey,
+						"uid":        "1000",
+						"gid":        "100",
+					},
+				},
+			},
+		},
+	})
+
+	// Add VolumeMount
+	patches = append(patches, map[string]interface{}{
+		"op":   "add",
+		"path": "/spec/containers/0/volumeMounts/-",
+		"value": v1.VolumeMount{
+			Name:      name,
+			MountPath: mountPath,
+		},
+	})
+
+	return patches
+}
+
+func (s *server) addInstance(instance, mount, endpoint, region, profile, base string) []map[string]interface{} {
+	patches := make([]map[string]interface{}, 0)
+
+	// Attempt to request a token from Vault for Minio
+	creds, err := s.vault.Logical().Read(fmt.Sprintf("%s/keys/profile-%s", mount, profile))
+	if err != nil {
+		klog.Warningf("unable to obtain MinIO token at %s/%s: %v", mount, profile, err)
+		return patches
+	}
+
+	accessKey := creds.Data["accessKeyId"].(string)
+	secretKey := creds.Data["secretAccessKey"].(string)
+
+	// Mount private
+	patches = append(patches, s.addMount(fmt.Sprintf("%s-private", instance), accessKey, secretKey, endpoint, region, profile, path.Join(base, "private"))...)
+
+	// Mount shared
+	patches = append(patches, s.addMount(fmt.Sprintf("%s-shared", instance), accessKey, secretKey, endpoint, region, "shared", path.Join(base, "shared"))...)
+
+	return patches
 }
 
 func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResponse, error) {
@@ -37,43 +101,12 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 
 	log.Printf("Check pod for notebook %s/%s", pod.Namespace, pod.Name)
 
+	profile := cleanName(pod.Namespace)
+
 	// If we have a notebook, then lets run the logic
-	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok {
-		// Attempt to request a token from Vault for Minio
-		creds, err := s.vault.Logical().Read(fmt.Sprintf("minio_minimal_tenant1/keys/profile-%s", cleanName(pod.Namespace)))
-		if err != nil {
-			klog.Warningf("unable to obtain MinIO token: %v", err)
-			return response, nil
-		}
-
-		patches = append(patches, map[string]interface{}{
-			"op":   "add",
-			"path": "/spec/volumes/-",
-			"value": v1.Volume{
-				Name: "minio-minimal-tenant1-private",
-				VolumeSource: v1.VolumeSource{
-					FlexVolume: &v1.FlexVolumeSource{
-						Driver: "informaticslab/goofys-flex-volume",
-						Options: map[string]string{
-							"bucket":     cleanName(pod.Namespace),
-							"endpoint":   "https://minimal-tenant1-minio.covid.cloud.statcan.ca",
-							"region":     "us-east-1",
-							"access-key": creds.Data["accessKeyId"].(string),
-							"secret-key": creds.Data["secretAccessKey"].(string),
-						},
-					},
-				},
-			},
-		})
-
-		patches = append(patches, map[string]interface{}{
-			"op":   "add",
-			"path": "/spec/containers/0/volumeMounts/-",
-			"value": v1.VolumeMount{
-				Name:      "minio-minimal-tenant1-private",
-				MountPath: "/minio/minimal-tenant1/private",
-			},
-		})
+	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "will-hearn") {
+		patches = append(patches, s.addInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
+		patches = append(patches, s.addInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
 
 		response.AuditAnnotations = map[string]string{
 			"goofys-injector": "Added MinIO volume mounts",

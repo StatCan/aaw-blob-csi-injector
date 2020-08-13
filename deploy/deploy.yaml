@@ -54,13 +54,19 @@ spec:
         apps.kubernetes.io/name: goofys-injector
       annotations:
         sidecar.istio.io/inject: 'false'
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-configmap: "goofys-injector-vault-agent-config"
+        vault.hashicorp.com/agent-pre-populate: "false"
     spec:
       serviceAccountName: goofys-injector
       imagePullSecrets:
         - name: k8scc01covidacr-registry-connection
       containers:
       - name: goofys-injector
-        image: k8scc01covidacr.azurecr.io/goofys-injector:dd7e608149021e79ae97bac99f89dbaceb670e11
+        image: k8scc01covidacr.azurecr.io/goofys-injector:latest
+        env:
+        - name: VAULT_AGENT_ADDR
+          value: http://127.0.0.1:8100
         resources:
           limits:
             memory: "128Mi"
@@ -76,6 +82,39 @@ spec:
       - name: certs
         secret:
           secretName: goofys-injector-tls
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goofys-injector-vault-agent-config
+  namespace: daaas
+data:
+  config.hcl: |
+    "auto_auth" = {
+      "method" = {
+        "config" = {
+          "role" = "goofys-injector"
+        }
+        "type" = "kubernetes"
+        "mount_path" = "auth/k8s-cancentral-02-covid-aks"
+      }
+    }
+
+    "exit_after_auth" = false
+    "pid_file" = "/home/vault/.pid"
+
+    cache {
+      "use_auto_auth_token" = "force"
+    }
+
+    listener "tcp" {
+      address = "127.0.0.1:8100"
+      "tls_disable" = true
+    }
+
+    "vault" = {
+      "address" = "https://vault.covid.cloud.statcan.ca"
+    }
 ---
 apiVersion: v1
 kind: Service

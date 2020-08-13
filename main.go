@@ -81,13 +81,6 @@ func main() {
 		klog.Fatalf("Error initializing Vault client: %s", err)
 	}
 
-	// secret, err := vc.Logical().Read("minio_minimal_tenant1/keys/profile-will-hearn")
-	// if err != nil {
-	// 	klog.Fatalf("error fetching minio credentials: %v", err)
-	// }
-
-	// klog.Infof("%v", secret)
-
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", s.handleRoot)
