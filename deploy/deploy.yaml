@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: goofys-injector
+  namespace: daaas
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Issuer
+metadata:
+  name: goofys-injector-issuer
+  namespace: daaas
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1alpha2
+kind: Certificate
+metadata:
+  name: goofys-injector
+  namespace: daaas
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+spec:
+  secretName: goofys-injector-tls
+  commonName: "goofys-injector.daaas.svc.cluster.local"
+  dnsNames:
+  - goofys-injector
+  - goofys-injector.daaas
+  - goofys-injector.daaas.svc
+  - goofys-injector.daaas.svc.cluster
+  isCA: true
+  duration: 8760h
+  issuerRef:
+    name: goofys-injector-issuer
+    kind: Issuer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: goofys-injector
+  namespace: daaas
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+spec:
+  selector:
+    matchLabels:
+      apps.kubernetes.io/name: goofys-injector
+  template:
+    metadata:
+      labels:
+        apps.kubernetes.io/name: goofys-injector
+      annotations:
+        sidecar.istio.io/inject: 'false'
+    spec:
+      serviceAccountName: goofys-injector
+      imagePullSecrets:
+        - name: k8scc01covidacr-registry-connection
+      containers:
+      - name: goofys-injector
+        image: k8scc01covidacr.azurecr.io/goofys-injector:dd7e608149021e79ae97bac99f89dbaceb670e11
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - name: https
+          containerPort: 8443
+        volumeMounts:
+        - name: certs
+          mountPath: /certs
+          readOnly: true
+      volumes:
+      - name: certs
+        secret:
+          secretName: goofys-injector-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: goofys-injector
+  namespace: daaas
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+spec:
+  selector:
+    apps.kubernetes.io/name: goofys-injector
+  ports:
+  - name: https
+    port: 443
+    targetPort: 8443
+---
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: daaas/goofys-injector
+  labels:
+    apps.kubernetes.io/name: goofys-injector
+  name: goofys-injector
+webhooks:
+- admissionReviewVersions:
+  - v1beta1
+  clientConfig:
+    service:
+      name: goofys-injector
+      namespace: daaas
+      path: /mutate
+      port: 443
+  failurePolicy: Ignore
+  name: goofys-injector.statcan.gc.ca
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    resources:
+    - pods
+    scope: '*'
