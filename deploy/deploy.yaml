@@ -63,7 +63,7 @@ spec:
         - name: k8scc01covidacr-registry-connection
       containers:
       - name: goofys-injector
-        image: k8scc01covidacr.azurecr.io/goofys-injector:latest
+        image: k8scc01covidacr.azurecr.io/goofys-injector:f4e13082ddd285ad0496a27230f2c360a4933ff4
         env:
         - name: VAULT_AGENT_ADDR
           value: http://127.0.0.1:8100
