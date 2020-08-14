@@ -104,7 +104,7 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 	profile := cleanName(pod.Namespace)
 
 	// If we have a notebook, then lets run the logic
-	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "will-hearn" || profile == "blair-drummond" || profile == "christian-ritter") {
+	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "will-hearn" || profile == "blair-drummond" || profile == "christian-ritter" || profile == "andrew-scribner") {
 		patches = append(patches, s.addInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
 		patches = append(patches, s.addInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
 
