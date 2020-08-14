@@ -1,3 +1,3 @@
-# GPU Toleration Injector
+# Goofys Injector
 
-This mutating webhook adds the toleration to allow GPU pods to schedule on the GPU nodes.
+Inject MinIO volume configuration using goofys into Jupyter Notebook pods.
