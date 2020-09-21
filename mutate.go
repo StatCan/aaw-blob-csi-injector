@@ -75,7 +75,7 @@ func (s *server) addBoathouseMount(name, vaultPath, endpoint, region, bucket, mo
 						"endpoint":   endpoint,
 						"region":     region,
 						"vault-path": vaultPath,
-						"vault-ttl":  "1d",
+						"vault-ttl":  "24h",
 						"uid":        "1000",
 						"gid":        "100",
 					},
