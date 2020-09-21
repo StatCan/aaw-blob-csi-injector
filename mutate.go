@@ -157,24 +157,7 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 	profile := cleanName(pod.Namespace)
 
 	// If we have a notebook, then lets run the logic
-	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "blair-drummond" || profile == "christian-ritter" || profile == "andrew-scribner") {
-		patches = append(patches, s.addInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
-		patches = append(patches, s.addInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
-
-		response.AuditAnnotations = map[string]string{
-			"goofys-injector": "Added MinIO volume mounts",
-		}
-		response.Patch, err = json.Marshal(patches)
-		if err != nil {
-			return response, err
-		}
-
-		response.Result = &metav1.Status{
-			Status: metav1.StatusSuccess,
-		}
-	}
-
-	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "seguzac2" || profile == "will-hearn") {
+	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok {
 		patches = append(patches, s.addBoathouseInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
 		patches = append(patches, s.addBoathouseInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
 
