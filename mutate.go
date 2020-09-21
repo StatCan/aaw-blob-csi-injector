@@ -58,6 +58,45 @@ func (s *server) addMount(name, accessKey, secretKey, endpoint, region, bucket, 
 	return patches
 }
 
+func (s *server) addBoathouseMount(name, vaultPath, endpoint, region, bucket, mountPath string) []map[string]interface{} {
+	patches := make([]map[string]interface{}, 0)
+
+	// Add volume definition
+	patches = append(patches, map[string]interface{}{
+		"op":   "add",
+		"path": "/spec/volumes/-",
+		"value": v1.Volume{
+			Name: name,
+			VolumeSource: v1.VolumeSource{
+				FlexVolume: &v1.FlexVolumeSource{
+					Driver: "statcan.gc.ca/boathouse",
+					Options: map[string]string{
+						"bucket":     bucket,
+						"endpoint":   endpoint,
+						"region":     region,
+						"vault-path": vaultPath,
+						"vault-ttl":  "1d",
+						"uid":        "1000",
+						"gid":        "100",
+					},
+				},
+			},
+		},
+	})
+
+	// Add VolumeMount
+	patches = append(patches, map[string]interface{}{
+		"op":   "add",
+		"path": "/spec/containers/0/volumeMounts/-",
+		"value": v1.VolumeMount{
+			Name:      name,
+			MountPath: mountPath,
+		},
+	})
+
+	return patches
+}
+
 func (s *server) addInstance(instance, mount, endpoint, region, profile, base string) []map[string]interface{} {
 	patches := make([]map[string]interface{}, 0)
 
@@ -76,6 +115,20 @@ func (s *server) addInstance(instance, mount, endpoint, region, profile, base st
 
 	// Mount shared
 	patches = append(patches, s.addMount(fmt.Sprintf("%s-shared", instance), accessKey, secretKey, endpoint, region, "shared", path.Join(base, "shared"))...)
+
+	return patches
+}
+
+func (s *server) addBoathouseInstance(instance, mount, endpoint, region, profile, base string) []map[string]interface{} {
+	patches := make([]map[string]interface{}, 0)
+
+	vaultPath := fmt.Sprintf("%s/keys/profile-%s", mount, profile)
+
+	// Mount private
+	patches = append(patches, s.addBoathouseMount(fmt.Sprintf("%s-private", instance), vaultPath, endpoint, region, profile, path.Join(base, "private"))...)
+
+	// Mount shared
+	patches = append(patches, s.addBoathouseMount(fmt.Sprintf("%s-shared", instance), vaultPath, endpoint, region, "shared", path.Join(base, "shared"))...)
 
 	return patches
 }
@@ -104,9 +157,26 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 	profile := cleanName(pod.Namespace)
 
 	// If we have a notebook, then lets run the logic
-	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "seguzac2" || profile == "will-hearn" || profile == "blair-drummond" || profile == "christian-ritter" || profile == "andrew-scribner") {
+	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "blair-drummond" || profile == "christian-ritter" || profile == "andrew-scribner") {
 		patches = append(patches, s.addInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
 		patches = append(patches, s.addInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
+
+		response.AuditAnnotations = map[string]string{
+			"goofys-injector": "Added MinIO volume mounts",
+		}
+		response.Patch, err = json.Marshal(patches)
+		if err != nil {
+			return response, err
+		}
+
+		response.Result = &metav1.Status{
+			Status: metav1.StatusSuccess,
+		}
+	}
+
+	if _, ok := pod.ObjectMeta.Labels["notebook-name"]; ok && (profile == "zachary-seguin" || profile == "seguzac2" || profile == "will-hearn") {
+		patches = append(patches, s.addBoathouseInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1")...)
+		patches = append(patches, s.addBoathouseInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1")...)
 
 		response.AuditAnnotations = map[string]string{
 			"goofys-injector": "Added MinIO volume mounts",
