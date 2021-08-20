@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"path"
-	"strings"
 	"strconv"
+	"strings"
 
 	"k8s.io/api/admission/v1beta1"
 	v1 "k8s.io/api/core/v1"
@@ -167,7 +167,7 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 		if err != nil {
 			return response, fmt.Errorf("unable to decode data.statcan.gc.ca/boathouse-inject annotation %w", err)
 		}
-		inject = bval	
+		inject = bval
 	}
 
 	// If we have a Argo workflow, then lets run the logic
@@ -181,11 +181,17 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 		}
 	}
 
+	// TEMP: Until boathouse supports the Protected B configuration,
+	// we will not operated on pods with a Protected B classification.
+	if val, ok := pod.ObjectMeta.Labels["data.statcan.gc.ca/classification"]; ok {
+		if val == "protected-b" {
+			inject = false
+		}
+	}
+
 	if inject {
-		// patches = append(patches, s.addBoathouseInstance("minimal-minio-tenant1", "minio_minimal_tenant1", "https://minimal-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/minimal-tenant1", containerIndex)...)
-		// patches = append(patches, s.addBoathouseInstance("premium-minio-tenant1", "minio_premium_tenant1", "https://premium-tenant1-minio.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant1", containerIndex)...)
-		patches = append(patches, s.addBoathouseInstance("premium-minio-tenant-1", "minio_premium_tenant_1", "https://minio-premium-tenant-1.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium-tenant-1", containerIndex)...)
-		patches = append(patches, s.addBoathouseInstance("standard-minio-tenant-1", "minio_standard_tenant_1", "https://minio-standard-tenant-1.covid.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/standard-tenant-1", containerIndex)...)
+		patches = append(patches, s.addBoathouseInstance("minio-premium", "minio_premium", "https://minio-premium.aaw-dev.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium", containerIndex)...)
+		patches = append(patches, s.addBoathouseInstance("minio-standard", "minio_standard", "https://minio-standard.aaw-dev.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/standard", containerIndex)...)
 
 		response.AuditAnnotations = map[string]string{
 			"goofys-injector": "Added MinIO volume mounts",
