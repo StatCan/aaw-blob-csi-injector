@@ -19,8 +19,7 @@ on:
 # Environment variables available to all jobs and steps in this workflow
 env:
   REGISTRY_NAME: k8scc01covidacr
-  CLUSTER_NAME: k8s-cancentral-01-covid-aks
-  CLUSTER_RESOURCE_GROUP: k8s-cancentral-01-covid-aks
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,14 +44,3 @@ jobs:
         image-name: ${{ env.REGISTRY_NAME }}.azurecr.io/goofys-injector:${{ github.sha }}
         severity-threshold: CRITICAL
         run-quality-checks: false
-
-    # Prepare to deploy the image
-    - run: |
-        sed -i -E 's/[0-9a-f]{40}/${{ github.sha }}/g' deploy/deploy.yaml
-
-    # Deploy to Kubernetes
-    - name: kubectl
-      uses: statcan/actions/kubectl@master
-      with:
-        kubeconfig: ${{ secrets.KUBECONFIG }}
-        args: apply -f deploy/deploy.yaml
