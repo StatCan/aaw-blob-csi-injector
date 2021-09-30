@@ -190,8 +190,17 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 	}
 
 	if inject {
-		patches = append(patches, s.addBoathouseInstance("minio-premium", "minio_premium", "https://minio-premium.aaw-dev.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/premium", containerIndex)...)
-		patches = append(patches, s.addBoathouseInstance("minio-standard", "minio_standard", "https://minio-standard.aaw-dev.cloud.statcan.ca", defaultRegion, profile, "/home/jovyan/minio/standard", containerIndex)...)
+		for _, instance := range instances {
+			patches = append(patches,
+				s.addBoathouseInstance(
+					strings.Replace(instance.Name, "_", "-", -1),
+					instance.Name,
+					instance.ExternalUrl,
+					defaultRegion,
+					profile,
+					fmt.Sprintf("/home/jovyan/minio/%s", instance.Short),
+					containerIndex)...)
+		}
 
 		response.AuditAnnotations = map[string]string{
 			"goofys-injector": "Added MinIO volume mounts",
