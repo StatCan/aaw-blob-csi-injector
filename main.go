@@ -3,16 +3,59 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	vault "github.com/hashicorp/vault/api"
 	"k8s.io/api/admission/v1beta1"
 	"k8s.io/klog"
 )
+
+type Instance struct {
+	Name           string
+	Classification string
+	ExternalUrl    string
+	Short          string
+}
+
+var instances []Instance
+var defaultInstances = `
+	{"name": "minio_standard", "short": "standard", "classification": "unclassified", "externalUrl": "https://minio-standard.aaw-dev.cloud.statcan.ca:443"}
+	{"name": "minio_premium", "short": "standard", "classification": "unclassified", "externalUrl": "https://minio-premium.aaw-dev.cloud.statcan.ca:443"}
+`
+
+// Sets the global instances variable
+func configInstances() {
+	var config string
+	if _, err := os.Stat("instances.json"); os.IsNotExist(err) {
+		config = defaultInstances
+	} else {
+		config_bytes, err := ioutil.ReadFile("instances.json") // just pass the file name
+		if err != nil {
+			log.Fatal(err)
+		}
+		config = string(config_bytes)
+	}
+
+	dec := json.NewDecoder(strings.NewReader(config))
+	for {
+		var instance Instance
+		err := dec.Decode(&instance)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatal(err)
+		}
+		fmt.Println(instance)
+		instances = append(instances, instance)
+	}
+}
 
 type server struct {
 	vault *vault.Client
@@ -73,6 +116,9 @@ func (s *server) handleMutate(w http.ResponseWriter, r *http.Request) {
 func main() {
 	var err error
 	s := server{}
+
+	// Set the global instances list
+	configInstances()
 
 	s.vault, err = vault.NewClient(&vault.Config{
 		AgentAddress: os.Getenv("VAULT_AGENT_ADDR"),
