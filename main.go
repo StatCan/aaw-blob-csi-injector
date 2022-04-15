@@ -3,62 +3,27 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
-	vault "github.com/hashicorp/vault/api"
+	"github.com/spf13/cobra"
 	"k8s.io/api/admission/v1beta1"
-	"k8s.io/klog"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-type Instance struct {
-	Name           string
-	Classification string
-	ExternalUrl    string
-	Short          string
-}
-
-var instances []Instance
-var defaultInstances = `
-	{"name": "minio_standard", "short": "standard", "classification": "unclassified", "externalUrl": "https://minio-standard.aaw-dev.cloud.statcan.ca:443"}
-	{"name": "minio_premium", "short": "standard", "classification": "unclassified", "externalUrl": "https://minio-premium.aaw-dev.cloud.statcan.ca:443"}
-`
-
-// Sets the global instances variable
-func configInstances() {
-	var config string
-	if _, err := os.Stat("instances.json"); os.IsNotExist(err) {
-		config = defaultInstances
-	} else {
-		config_bytes, err := ioutil.ReadFile("instances.json") // just pass the file name
-		if err != nil {
-			log.Fatal(err)
-		}
-		config = string(config_bytes)
-	}
-
-	dec := json.NewDecoder(strings.NewReader(config))
-	for {
-		var instance Instance
-		err := dec.Decode(&instance)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Fatal(err)
-		}
-		fmt.Println(instance)
-		instances = append(instances, instance)
-	}
+var apiserver string
+var kubeconfig string
+var rootCmd = &cobra.Command{
+	Use:   "blob-csi-webhook",
+	Short: "A Mutating webhook for automounting labeled PVCs",
+	Long:  `A Mutating webhook for automounting labeled PVCs`,
 }
 
 type server struct {
-	vault *vault.Client
+	client *kubernetes.Clientset
 }
 
 // Based on https://medium.com/ovni/writing-a-very-basic-kubernetes-mutating-admission-webhook-398dbbcb63ec
@@ -114,18 +79,24 @@ func (s *server) handleMutate(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	var err error
-	s := server{}
 
-	// Set the global instances list
-	configInstances()
+	rootCmd.PersistentFlags().StringVar(&apiserver, "apiserver", "", "URL to the Kubernetes API server")
+	rootCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the Kubeconfig file")
+	rootCmd.Execute()
 
-	s.vault, err = vault.NewClient(&vault.Config{
-		AgentAddress: os.Getenv("VAULT_AGENT_ADDR"),
-	})
+	// use the current context in kubeconfig
+	config, err := clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
 	if err != nil {
-		klog.Fatalf("Error initializing Vault client: %s", err)
+		panic(err.Error())
 	}
+
+	// create the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	s := server{clientset}
 
 	mux := http.NewServeMux()
 

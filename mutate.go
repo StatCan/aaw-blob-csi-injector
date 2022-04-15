@@ -1,65 +1,74 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"path"
 	"strconv"
-	"strings"
 
 	"k8s.io/api/admission/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/klog"
 )
 
-const defaultRegion = "us-east-1"
+const injectionLabel = "data.statcan.gc.ca/inject-blob-volumes"
+const automountLabel = "blob.aaw.statcan.gc.ca/automount"
+const classificationLabel = "data.statcan.gc.ca/classification"
 
-func cleanName(name string) string {
-	return strings.ReplaceAll(name, "_", "-")
-}
+// TODO: make sure the PV & PVCs are not in terminating state.
+func (s *server) getBinds(pod v1.Pod) ([]v1.PersistentVolumeClaim, error) {
 
-func (s *server) addMount(name, accessKey, secretKey, endpoint, region, bucket, mountPath string) []map[string]interface{} {
-	patches := make([]map[string]interface{}, 0)
-
-	// Add volume definition
-	patches = append(patches, map[string]interface{}{
-		"op":   "add",
-		"path": "/spec/volumes/-",
-		"value": v1.Volume{
-			Name: name,
-			VolumeSource: v1.VolumeSource{
-				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "informaticslab/goofys-flex-volume",
-					Options: map[string]string{
-						"bucket":     bucket,
-						"endpoint":   endpoint,
-						"region":     region,
-						"access-key": accessKey,
-						"secret-key": secretKey,
-						"uid":        "1000",
-						"gid":        "100",
+	// classificationLabel: "protected-b",
+	var selector metav1.LabelSelector
+	if classification, ok := pod.ObjectMeta.Labels[classificationLabel]; ok && classification == "protected-b" {
+		// automount && protected-b == true
+		selector = metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				classificationLabel: classification,
+				automountLabel:      "true",
+			},
+		}
+	} else {
+		// automount && !(protected-b == true)
+		selector = metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				automountLabel: "true",
+			},
+			MatchExpressions: []metav1.LabelSelectorRequirement{
+				{
+					Key:      classificationLabel,
+					Operator: metav1.LabelSelectorOpNotIn,
+					Values: []string{
+						"protected-b",
 					},
 				},
 			},
-		},
-	})
+		}
+	}
 
-	// Add VolumeMount
-	patches = append(patches, map[string]interface{}{
-		"op":   "add",
-		"path": "/spec/containers/0/volumeMounts/-",
-		"value": v1.VolumeMount{
-			Name:      name,
-			MountPath: mountPath,
-		},
-	})
+	//
+	selectorStr, _ := metav1.LabelSelectorAsSelector(&selector)
 
-	return patches
+	pvcs, _ := s.client.CoreV1().PersistentVolumeClaims(pod.Namespace).List(
+		context.Background(),
+		metav1.ListOptions{},
+	)
+
+	pvcs, err := s.client.CoreV1().PersistentVolumeClaims(pod.Namespace).List(
+		context.Background(),
+		metav1.ListOptions{
+			LabelSelector: selectorStr.String(),
+		},
+	)
+	if err != nil {
+		return []v1.PersistentVolumeClaim{}, err
+	}
+
+	return pvcs.Items, nil
 }
 
-func (s *server) addBoathouseMount(name, vaultPath, endpoint, region, bucket, mountPath string, containerIndex int) []map[string]interface{} {
+func (s *server) addVolumeMount(name, mountPath string, readOnly bool, containerIndex int) []map[string]interface{} {
 	patches := make([]map[string]interface{}, 0)
 
 	// Add volume definition
@@ -69,17 +78,9 @@ func (s *server) addBoathouseMount(name, vaultPath, endpoint, region, bucket, mo
 		"value": v1.Volume{
 			Name: name,
 			VolumeSource: v1.VolumeSource{
-				FlexVolume: &v1.FlexVolumeSource{
-					Driver: "statcan.gc.ca/boathouse",
-					Options: map[string]string{
-						"bucket":     bucket,
-						"endpoint":   endpoint,
-						"region":     region,
-						"vault-path": vaultPath,
-						"vault-ttl":  "24h",
-						"uid":        "1000",
-						"gid":        "100",
-					},
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					ClaimName: name,
+					// ReadOnly:  readOnly, // I think the underlying PV handles this. TODO: Check.
 				},
 			},
 		},
@@ -98,44 +99,15 @@ func (s *server) addBoathouseMount(name, vaultPath, endpoint, region, bucket, mo
 	return patches
 }
 
-func (s *server) addInstance(instance, mount, endpoint, region, profile, base string) []map[string]interface{} {
-	patches := make([]map[string]interface{}, 0)
-
-	// Attempt to request a token from Vault for Minio
-	creds, err := s.vault.Logical().Read(fmt.Sprintf("%s/keys/profile-%s", mount, profile))
-	if err != nil {
-		klog.Warningf("unable to obtain MinIO token at %s/%s: %v", mount, profile, err)
-		return patches
-	}
-
-	accessKey := creds.Data["accessKeyId"].(string)
-	secretKey := creds.Data["secretAccessKey"].(string)
-
-	// Mount private
-	patches = append(patches, s.addMount(fmt.Sprintf("%s-private", instance), accessKey, secretKey, endpoint, region, profile, path.Join(base, "private"))...)
-
-	// Mount shared
-	patches = append(patches, s.addMount(fmt.Sprintf("%s-shared", instance), accessKey, secretKey, endpoint, region, "shared", path.Join(base, "shared"))...)
-
-	return patches
-}
-
-func (s *server) addBoathouseInstance(instance, mount, endpoint, region, profile, base string, containerIndex int) []map[string]interface{} {
-	patches := make([]map[string]interface{}, 0)
-
-	vaultPath := fmt.Sprintf("%s/keys/profile-%s", mount, profile)
-
-	// Mount private
-	patches = append(patches, s.addBoathouseMount(fmt.Sprintf("%s-private", instance), vaultPath, endpoint, region, profile, path.Join(base, "private"), containerIndex)...)
-
-	// Mount shared
-	patches = append(patches, s.addBoathouseMount(fmt.Sprintf("%s-shared", instance), vaultPath, endpoint, region, "shared", path.Join(base, "shared"), containerIndex)...)
-
-	return patches
+func prettyPrint(i interface{}) string {
+	s, _ := json.MarshalIndent(i, "", "\t")
+	return string(s)
 }
 
 func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResponse, error) {
 	response := v1beta1.AdmissionResponse{}
+
+	log.Println(prettyPrint(request))
 
 	// Default response
 	response.Allowed = true
@@ -153,19 +125,27 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 		return response, fmt.Errorf("unable to decode Pod %w", err)
 	}
 
-	log.Printf("Check pod for notebook %s/%s", pod.Namespace, pod.Name)
+	// We have to populate this from the
+	// AdmissionReview object?
+	pod.Name = request.Name
+	pod.Namespace = request.Namespace
+
+	log.Printf(
+		"Check pod for notebook %s/%s",
+		pod.Name,
+		pod.Namespace,
+	)
 
 	// Only inject when matching label
 	inject := false
 	containerIndex := 0
 
-	profile := cleanName(pod.Namespace)
-
 	// If we have the right annotations
-	if val, ok := pod.ObjectMeta.Annotations["data.statcan.gc.ca/inject-boathouse"]; ok {
+	if val, ok := pod.ObjectMeta.Annotations[injectionLabel]; ok {
 		bval, err := strconv.ParseBool(val)
 		if err != nil {
-			return response, fmt.Errorf("unable to decode data.statcan.gc.ca/boathouse-inject annotation %w", err)
+			log.Printf("Failed to parse injection label for %s/%s", pod.Name, pod.Namespace)
+			return response, fmt.Errorf("unable to decode %s annotation %w", injectionLabel, err)
 		}
 		inject = bval
 	}
@@ -181,29 +161,26 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 		}
 	}
 
-	// TEMP: Until boathouse supports the Protected B configuration,
-	// we will not operated on pods with a Protected B classification.
-	if val, ok := pod.ObjectMeta.Labels["data.statcan.gc.ca/classification"]; ok {
-		if val == "protected-b" {
-			inject = false
-		}
-	}
+	log.Println(pod)
 
 	if inject {
-		for _, instance := range instances {
-			patches = append(patches,
-				s.addBoathouseInstance(
-					strings.Replace(instance.Name, "_", "-", -1),
-					instance.Name,
-					instance.ExternalUrl,
-					defaultRegion,
-					profile,
-					fmt.Sprintf("/home/jovyan/minio/%s", instance.Short),
-					containerIndex)...)
+		log.Printf("Injecting pod %s/%s ...\n", pod.Name, pod.Namespace)
+		pvcs, err := s.getBinds(pod)
+
+		// Add all PVC patches
+		for _, pvc := range pvcs {
+			log.Println(fmt.Sprintf("/home/jovyan/buckets/%s", pvc.Name))
+			pvcpatches := s.addVolumeMount(
+				pvc.Name,
+				fmt.Sprintf("/home/jovyan/buckets/%s", pvc.Name),
+				false,
+				containerIndex,
+			)
+			patches = append(patches, pvcpatches...)
 		}
 
 		response.AuditAnnotations = map[string]string{
-			"goofys-injector": "Added MinIO volume mounts",
+			"blob-csi-injector": "Added Blob-CSI volume mounts",
 		}
 		response.Patch, err = json.Marshal(patches)
 		if err != nil {
@@ -213,6 +190,8 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 		response.Result = &metav1.Status{
 			Status: metav1.StatusSuccess,
 		}
+	} else {
+		log.Printf("Skipping pod %s/%s.\n", pod.Name, pod.Namespace)
 	}
 
 	return response, nil
