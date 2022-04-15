@@ -1,6 +1,6 @@
 
 # Build with the golang image
-FROM golang:1.14-alpine AS build
+FROM golang:1.18-alpine AS build
 
 # Add git
 RUN apk add git
@@ -19,5 +19,5 @@ RUN CGO_ENABLED=0 go build
 
 # Generate final image
 FROM scratch
-COPY --from=build /work/goofys-injector /goofys-injector
-ENTRYPOINT [ "/goofys-injector" ]
+COPY --from=build /work/blob-csi-injector /blob-csi-injector
+ENTRYPOINT [ "/blob-csi-injector" ]

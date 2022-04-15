@@ -1,4 +1,6 @@
 .vscode/
 manifests/
+deploy/
 Dockerfile
+blob-csi-injector
 .gitignore
