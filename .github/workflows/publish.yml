@@ -35,12 +35,12 @@ jobs:
 
     # Container build and push to a Azure Container registry (ACR)
     - run: |
-        docker build -f Dockerfile -t ${{ env.REGISTRY_NAME }}.azurecr.io/goofys-injector:${{ github.sha }} .
-        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/goofys-injector:${{ github.sha }}
+        docker build -f Dockerfile -t ${{ env.REGISTRY_NAME }}.azurecr.io/blob-csi-injector:${{ github.sha }} .
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/blob-csi-injector:${{ github.sha }}
 
     # Scan image for vulnerabilities
     - uses: Azure/container-scan@v0
       with:
-        image-name: ${{ env.REGISTRY_NAME }}.azurecr.io/goofys-injector:${{ github.sha }}
+        image-name: ${{ env.REGISTRY_NAME }}.azurecr.io/blob-csi-injector:${{ github.sha }}
         severity-threshold: CRITICAL
         run-quality-checks: false
