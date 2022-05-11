@@ -50,10 +50,6 @@ func (s *server) getBinds(pod v1.Pod) ([]v1.PersistentVolumeClaim, error) {
 	//
 	selectorStr, _ := metav1.LabelSelectorAsSelector(&selector)
 
-	pvcs, _ := s.client.CoreV1().PersistentVolumeClaims(pod.Namespace).List(
-		context.Background(),
-		metav1.ListOptions{},
-	)
 
 	pvcs, err := s.client.CoreV1().PersistentVolumeClaims(pod.Namespace).List(
 		context.Background(),
