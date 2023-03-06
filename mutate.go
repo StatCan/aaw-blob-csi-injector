@@ -50,7 +50,6 @@ func (s *server) getBinds(pod v1.Pod) ([]v1.PersistentVolumeClaim, error) {
 	//
 	selectorStr, _ := metav1.LabelSelectorAsSelector(&selector)
 
-
 	pvcs, err := s.client.CoreV1().PersistentVolumeClaims(pod.Namespace).List(
 		context.Background(),
 		metav1.ListOptions{
@@ -137,7 +136,7 @@ func (s *server) mutate(request v1beta1.AdmissionRequest) (v1beta1.AdmissionResp
 	containerIndex := 0
 
 	// If we have the right annotations
-	if val, ok := pod.ObjectMeta.Annotations[injectionLabel]; ok {
+	if val, ok := pod.ObjectMeta.Labels[injectionLabel]; ok {
 		bval, err := strconv.ParseBool(val)
 		if err != nil {
 			log.Printf("Failed to parse injection label for %s/%s", pod.Name, pod.Namespace)
