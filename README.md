@@ -11,6 +11,6 @@ A mutating webhook which injects `volumes` and `volumeMounts` into pods with the
 
 ## References
 
-- [Blob CSI Architecture](https://github.com/StatCan/daaas/issues/1001)
+- [Blob CSI Architecture](https://github.com/StatCan/aaw/issues/1001)
 - [Mutating WebHook](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#mutatingadmissionwebhook)
 - [The blob-csi profile controller](https://github.com/StatCan/aaw-kubeflow-profiles-controller/blob/main/cmd/blob-csi.go)
