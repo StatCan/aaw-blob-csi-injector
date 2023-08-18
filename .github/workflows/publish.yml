@@ -58,9 +58,8 @@ jobs:
       with:
         image:  localhost:5000/blob-csi-injector:${{ github.sha }}
         format: 'list'
-        exit-code: '0'
-        # Must determine when / how we want to exit
-        #exit-level: 'fatal'
+        exit-code: '1'
+        exit-level: 'fatal'
         ignore: 'DKL-DI-0006'
 
     # Push if passed scanning
