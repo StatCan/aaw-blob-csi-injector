@@ -77,7 +77,11 @@ jobs:
             exit 1
           fi
         done
-    
+    # Test dockle build failure
+    - name: Debug Docker Network
+      run: |
+        docker network ls
+        curl -v http://localhost:5000/v2/
     # Run Dockle
     - name: Run dockle
       uses: goodwithtech/dockle-action@main
