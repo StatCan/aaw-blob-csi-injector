@@ -82,6 +82,12 @@ jobs:
           fi
         done
 
+    # Test dockle build failure
+    - name: Debug Docker Network
+      run: |
+        docker network ls
+        curl -v http://localhost:5000/v2/
+
     # Run Dockle
     - name: Run dockle
       uses: goodwithtech/dockle-action@main
@@ -91,6 +97,7 @@ jobs:
         exit-code: '1'
         exit-level: 'fatal'
         ignore: 'DKL-DI-0006'
+        insecure: true
 
     # Push if passed scanning
     - name: Push image to registry
